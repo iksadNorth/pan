@@ -1,11 +1,3 @@
-# Logs
-logs/
-*.log
-
-# Storage
-storage/
-
-# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -25,18 +17,9 @@ htmlcov/
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
+storage/
+*.side
 .DS_Store
-Thumbs.db
+.git/
+.gitignore
 
-
-# Custom
-sides

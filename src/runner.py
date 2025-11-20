@@ -200,6 +200,27 @@ class SeleniumSideRunner:
         with self._driver_session() as driver:
             self._run_tests(driver, [test])
 
+    def run_test_with_driver(self, test: SideTest, driver: webdriver.Remote) -> None:
+        """기존 WebDriver를 사용하여 테스트를 실행합니다.
+
+        Args:
+            test: 실행할 테스트
+            driver: 사용할 WebDriver 인스턴스 (quit()하지 않음)
+        """
+        driver.implicitly_wait(self.implicit_wait)
+        self._run_tests(driver, [test])
+
+    def run_suite_with_driver(self, suite: SideSuite, driver: webdriver.Remote) -> None:
+        """기존 WebDriver를 사용하여 Suite를 실행합니다.
+
+        Args:
+            suite: 실행할 Suite
+            driver: 사용할 WebDriver 인스턴스 (quit()하지 않음)
+        """
+        driver.implicitly_wait(self.implicit_wait)
+        tests = [self.project.tests[test_id] for test_id in suite.tests]
+        self._run_tests(driver, tests)
+
     def _run_tests(self, driver, tests: Iterable[SideTest]) -> None:
         context = CommandContext(driver=driver, base_url=self.base_url)
         executor = CommandExecutor(context)

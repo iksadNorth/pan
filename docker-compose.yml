@@ -1,0 +1,105 @@
+services:
+  # Selenium Grid Hub
+  selenium-hub:
+    image: selenium/hub:latest
+    container_name: selenium-hub
+    ports:
+      - "4444:4444"
+      - "4442:4442"
+      - "4443:4443"
+    environment:
+      - GRID_MAX_SESSION=16
+      - GRID_BROWSER_TIMEOUT=300
+      - GRID_TIMEOUT=300
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+    volumes:
+      - ./logs/selenium-hub:/var/log/selenium
+    networks:
+      - selenium-grid
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4444/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Chrome Node 1
+  chrome-node-1:
+    image: selenium/node-chrome:latest
+    platform: linux/amd64
+    container_name: chrome-node-1
+    depends_on:
+      - selenium-hub
+    environment:
+      - HUB_HOST=selenium-hub
+      - HUB_PORT=4444
+      - NODE_MAX_INSTANCES=4
+      - NODE_MAX_SESSION=4
+      - SE_VNC_PASSWORD=q1w2e3r4
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+    ports:
+      - "5901:5900"  # VNC 포트
+      - "7901:7900"  # noVNC 포트
+    volumes:
+      - /dev/shm:/dev/shm
+      - ./logs/chrome-node-1:/var/log/selenium
+    networks:
+      - selenium-grid
+
+  # Chrome Node 2
+  chrome-node-2:
+    image: selenium/node-chrome:latest
+    platform: linux/amd64
+    container_name: chrome-node-2
+    depends_on:
+      - selenium-hub
+    environment:
+      - HUB_HOST=selenium-hub
+      - HUB_PORT=4444
+      - NODE_MAX_INSTANCES=4
+      - NODE_MAX_SESSION=4
+      - SE_VNC_PASSWORD=q1w2e3r4
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+    ports:
+      - "5902:5900"  # VNC 포트
+      - "7902:7900"  # noVNC 포트
+    volumes:
+      - /dev/shm:/dev/shm
+      - ./logs/chrome-node-2:/var/log/selenium
+    networks:
+      - selenium-grid
+
+  # FastAPI 서버
+  api-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api-server
+    ports:
+      - "8000:8000"
+    environment:
+      - SIDE_STORAGE_DIR=/app/storage/sides
+      - LOCK_STORAGE_DIR=/app/storage/locks
+      - SELENIUM_GRID_URL=http://selenium-hub:4444
+      - SESSION_POOL_SIZE=2
+      - LOG_DIR=/app/logs
+    volumes:
+      - ./storage:/app/storage
+      - ./logs/api-server:/app/logs
+    depends_on:
+      selenium-hub:
+        condition: service_healthy
+    networks:
+      - selenium-grid
+    restart: unless-stopped
+
+networks:
+  selenium-grid:
+    driver: bridge
+
