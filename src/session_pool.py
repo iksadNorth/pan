@@ -66,8 +66,13 @@ class SessionPool:
                 )
                 session_id = driver.session_id
                 if session_id:
+                    # 세션 warm up을 위해 www.google.com에 접속
+                    try:
+                        driver.get("https://www.google.com")
+                        logger.info(f"세션 생성 및 warm up 완료: {session_id}")
+                    except Exception as warmup_error:
+                        logger.warning(f"세션 warm up 실패 ({session_id}): {warmup_error}, 세션은 생성되었습니다")
                     self._sessions[session_id] = driver
-                    logger.info(f"세션 생성 완료: {session_id}")
                 else:
                     logger.error("세션 ID를 가져올 수 없습니다")
                     driver.quit()
