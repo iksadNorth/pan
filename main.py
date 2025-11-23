@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from src import SeleniumSideRunner, create_webdriver_factory, load_side_project
+from src import SeleniumSideRunner, load_side_project
 from src.models import SideProject
 from src.logger_config import get_logger, log_method_call, setup_logging
 from src.parser import Parser

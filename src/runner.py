@@ -233,32 +233,6 @@ class CommandExecutor:
             raise NoSuchElementException(f"요소를 찾을 수 없습니다: {locator}") from exc
 
 
-@log_method_call
-def create_webdriver_factory(browser: str, headless: bool = False) -> BrowserFactory:
-    browser = browser.lower()
-
-    def factory() -> webdriver.Remote:
-        if browser == "chrome":
-            options = ChromeOptions()
-            if headless:
-                options.add_argument("--headless=new")
-            options.add_argument("--window-size=1280,720")
-            return webdriver.Chrome(options=options)
-        if browser == "firefox":
-            options = FirefoxOptions()
-            if headless:
-                options.add_argument("-headless")
-            return webdriver.Firefox(options=options)
-        if browser == "edge":
-            options = EdgeOptions()
-            if headless:
-                options.add_argument("--headless=new")
-            return webdriver.Edge(options=options)
-        raise ValueError(f"지원되지 않는 브라우저: {browser}")
-
-    return factory
-
-
 class SeleniumSideRunner:
     def __init__(
         self,
