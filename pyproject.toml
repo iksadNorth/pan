@@ -1,7 +1,7 @@
 [project]
 name = "selenium-side-webdriver"
 version = "0.1.0"
-description = "Add your description here"
+description = "Pan - Selenium IDE .side 파일을 실행하는 웹 API. 양치기 신 Pan처럼 HTML을 뜯어먹고 데이터를 취합니다."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

@@ -1,4 +1,4 @@
-"""FastAPI 기반 Selenium IDE (.side) 실행 웹 서버."""
+"""Pan - FastAPI 기반 Selenium IDE (.side) 실행 웹 서버."""
 
 from __future__ import annotations
 
@@ -64,8 +64,8 @@ async def lifespan(app: FastAPI):
 
 # FastAPI 앱 생성
 app = FastAPI(
-    title="Selenium IDE Side Runner API",
-    description="Selenium IDE .side 파일을 실행하는 웹 API",
+    title="Pan",
+    description="Selenium IDE .side 파일을 실행하는 웹 API - 양치기 신 Pan처럼 HTML을 뜯어먹고 데이터를 취합니다",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -434,7 +434,7 @@ async def execute_session(session_id: str, request: SessionExecuteRequest) -> st
 async def root() -> dict:
     """루트 엔드포인트."""
     return {
-        "message": "Selenium IDE Side Runner API",
+        "message": "Pan - Selenium IDE Side Runner API",
         "version": "0.1.0",
         "docs": "/docs",
     }
