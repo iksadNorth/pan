@@ -4,6 +4,9 @@
 
 Selenium Grid를 활용한 세션 풀링과 동시성 제어를 통해 안정적이고 효율적인 테스트 실행 환경을 제공합니다.
 
+![시스템 아키텍처](documents/architecture-diagram.png)
+
+*그림 1: Pan 시스템 아키텍처 - FastAPI 서버, Selenium Grid, 세션 풀, 저장소의 관계*
 
 ## 주요 의의
 
@@ -16,13 +19,23 @@ Selenium Grid를 활용한 세션 풀링과 동시성 제어를 통해 안정적
 
 1. **QA 시나리오 실행 속도 최적화**
     - **순차 실행 → 병렬 실행**: Selenium Standalone에서 Selenium Grid로 전환하여 병렬 연산 구현
+    
+    ![순차 실행 vs 병렬 실행](documents/sequential-vs-parallel.png)
+    *그림 2: 순차 실행과 병렬 실행 비교*
+    
     - **세션 Pool을 통한 Warm Up**: 요청마다 브라우저 세션을 생성하는 대신, 서버 시작 시 미리 세션을 확보하여 크롤링 수행
 
 2. **동시성 제어를 통한 작업 간 간섭 방지**
     - **파일 기반 Lock**: 각 세션마다 Lock 파일을 생성하여, 세션이 점유 중일 때 다른 요청의 접근을 차단하여 독점성 확보
+    
+    ![Lock 메커니즘](documents/lock-mechanism.png)
+    *그림 3: 파일 기반 Lock을 통한 세션 동시성 제어*
 
 3. **템플릿 엔진을 통한 파라미터 활용성 극대화**
     - Side 파일 자체를 Jinja2 템플릿으로 렌더링하여, 동일한 테스트 시나리오로 다양한 파라미터 조합의 시나리오를 생성
+    
+    ![템플릿 렌더링](documents/template-rendering.png)
+    *그림 4: Jinja2 템플릿을 통한 1:N 시나리오 생성*
 
 4. **유지보수성 확보를 위한 저장소 및 Lock 관리 추상화**
     - **SideRepository**: Side 파일 저장소를 인터페이스로 추상화하여, FileSystem에서 MongoDB 등으로의 전환 용이
@@ -70,6 +83,9 @@ Side 프로젝트를 실행하는 메인 러너 클래스입니다.
 
 #### `SessionPool`
 Selenium Grid 세션을 풀링하여 관리하는 클래스입니다.
+
+![세션 풀 동작 흐름](documents/session-pool-flow.png)
+*그림 5: 세션 풀의 초기화, 사용, 재사용, 복구 흐름*
 
 **주요 기능**:
 - **초기화**: 애플리케이션 시작 시 가능한 한 많은 세션을 미리 생성
@@ -207,6 +223,9 @@ Side 파일을 업로드합니다.
 4. 성공 시 해당 세션에서 테스트 실행
 5. 모든 세션이 사용 중이면 `503 Service Unavailable` 반환
 
+![API 실행 흐름](documents/api-execution-flow.png)
+*그림 6: POST /api/v1/sessions API의 전체 실행 흐름*
+
 
 ## 요구 사항
 
@@ -229,3 +248,6 @@ uvicorn main:app --reload
 3. API 문서 확인:
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
+
+![Swagger UI](documents/swagger-ui-screenshot.png)
+*그림 7: Swagger UI를 통한 API 테스트 예시*
