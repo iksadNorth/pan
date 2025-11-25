@@ -12,6 +12,36 @@ Selenium Grid를 활용한 세션 풀링과 동시성 제어를 통해 안정적
 
 *그림 1: Pan 시스템 아키텍처 - FastAPI 서버, Selenium Grid, 세션 풀, 저장소의 관계*
 
+### 시연 영상 1: Selenium IDE로 매크로 Side 파일 생성
+
+![demo](documents/demo-make-side.gif)
+
+*영상 1: Selenium IDE를 사용하여 웹 자동화 매크로를 녹화하고 .side 파일로 내보내는 과정*
+
+### 시연 영상 2: Side 파일 등록
+
+![demo](documents/demo-upload-side.gif)
+
+*영상 2: Swagger UI를 통해 생성한 .side 파일을 Pan API에 업로드하는 과정*
+
+### 시연 영상 3: noVNC를 통한 세션 모니터링
+
+![demo](documents/demo-monitor-session.gif)
+
+*영상 3: Selenium Grid Node의 noVNC를 통해 실제 브라우저 세션이 실행되는 모습을 실시간으로 확인*
+
+### 시연 영상 4: 특정 세션에서 Side 파일 실행
+
+![demo](documents/demo-siderun-in-session.gif)
+
+*영상 4: 등록된 Side 파일을 특정 세션에서 실행하고 결과를 확인하는 과정*
+
+### 시연 영상 5: 템플릿 파라미터를 활용한 동적 시나리오 실행
+
+![demo](documents/demo-siderun-dynamic.gif)
+
+*영상 5: Jinja2 템플릿이 포함된 Side 파일에 다양한 파라미터를 전달하여 동적으로 시나리오를 생성하고 실행하는 과정*
+
 ## 주요 의의
 
 - **Selenium IDE, Grid 그리고 WebDriver 기술의 통합**: QA 및 웹 크롤링 자동화 파이프라인 완성
