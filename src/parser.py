@@ -28,7 +28,11 @@ class Parser:
     def render(self, side_content: str) -> str:
         """dict처럼 접근: parser['key']"""
         template = Template(side_content)
-        return template.render(parser=self)
+        faker = self.getFaker()
+        return template.render(
+            parser=self,
+            faker=faker,
+        )
     
     def __getitem__(self, key: str) -> str:
         """dict처럼 접근: parser['key']"""
@@ -76,9 +80,9 @@ class Parser:
             Faker 객체 (ko_KR 로케이션)
         
         사용 예:
-            {{ parser.getFaker().name() }}
-            {{ parser.getFaker().email() }}
-            {{ parser.getFaker().phone_number() }}
+            {{ faker.name() }}
+            {{ faker.email() }}
+            {{ faker.phone_number() }}
         """
         return Faker('ko_KR')
 
