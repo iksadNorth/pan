@@ -6,7 +6,7 @@
 
 *그림 0: 양치기 소년 그림*
 
-Selenium Grid를 활용한 세션 풀링과 동시성 제어를 통해 안정적이고 효율적인 테스트 실행 환경을 제공합니다.
+Selenium Grid를 활용한 세션 풀링과 동시성 제어를 통해 안정적이고 효율적인 크롤링 실행 환경을 제공합니다.
 
 ![시스템 아키텍처](documents/architecture-diagram.png)
 
@@ -85,7 +85,7 @@ src/
 ├── models.py              # 데이터 모델 (SideProject, SideTest, SideSuite, SideCommand)
 ├── loader.py              # Side 파일 로딩 및 파싱
 ├── parser.py              # Jinja2 템플릿 파서
-├── runner.py              # 테스트 실행 로직
+├── runner.py              # Side 실행 로직
 ├── session_pool.py        # Selenium Grid 세션 풀 관리
 ├── logger_config.py       # 로깅 설정
 └── repositories/
