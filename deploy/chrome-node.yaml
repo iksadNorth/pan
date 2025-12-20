@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: chrome-node
+  namespace: trendgetter
+  labels:
+    app: chrome-node
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: ${PAN_CHROME_NODE_METALLB_IP}
+spec:
+  type: LoadBalancer
+  ports:
+    - name: novnc
+      port: 7900
+      targetPort: 7900
+      protocol: TCP
+  selector:
+    app: chrome-node
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chrome-node
+  namespace: trendgetter
+  labels:
+    app: chrome-node
+spec:
+  replicas: ${CHROME_NODE_REPLICAS}
+  selector:
+    matchLabels:
+      app: chrome-node
+  template:
+    metadata:
+      labels:
+        app: chrome-node
+    spec:
+      containers:
+      - name: chrome-node
+        image: selenium/node-chrome:latest
+        ports:
+        - containerPort: 5900
+          name: vnc
+        - containerPort: 7900
+          name: novnc
+        env:
+        - name: HUB_HOST
+          value: "selenium-hub"
+        - name: HUB_PORT
+          value: "4444"
+        - name: NODE_MAX_INSTANCES
+          value: "4"
+        - name: NODE_MAX_SESSION
+          value: "4"
+        - name: SE_VNC_PASSWORD
+          value: "${SE_VNC_PASSWORD}"
+        - name: SE_EVENT_BUS_HOST
+          value: "selenium-hub"
+        - name: SE_EVENT_BUS_PUBLISH_PORT
+          value: "4442"
+        - name: SE_EVENT_BUS_SUBSCRIBE_PORT
+          value: "4443"
+        volumeMounts:
+        - name: dshm
+          mountPath: /dev/shm
+        - name: logs
+          mountPath: /var/log/selenium
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 2Gi
+      - name: logs
+        emptyDir: {}
+      restartPolicy: Always
+

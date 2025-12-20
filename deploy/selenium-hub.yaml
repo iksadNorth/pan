@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: selenium-hub
+  namespace: trendgetter
+  labels:
+    app: selenium-hub
+spec:
+  type: ClusterIP
+  ports:
+    - name: hub
+      port: 4444
+      targetPort: 4444
+      protocol: TCP
+    - name: publish
+      port: 4442
+      targetPort: 4442
+      protocol: TCP
+    - name: subscribe
+      port: 4443
+      targetPort: 4443
+      protocol: TCP
+  selector:
+    app: selenium-hub
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selenium-hub
+  namespace: trendgetter
+  labels:
+    app: selenium-hub
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: selenium-hub
+  template:
+    metadata:
+      labels:
+        app: selenium-hub
+    spec:
+      containers:
+      - name: selenium-hub
+        image: selenium/hub:latest
+        ports:
+        - containerPort: 4444
+          name: hub
+        - containerPort: 4442
+          name: publish
+        - containerPort: 4443
+          name: subscribe
+        env:
+        - name: GRID_MAX_SESSION
+          value: "16"
+        - name: GRID_BROWSER_TIMEOUT
+          value: "300"
+        - name: GRID_TIMEOUT
+          value: "300"
+        - name: SE_EVENT_BUS_HOST
+          value: "selenium-hub"
+        - name: SE_EVENT_BUS_PUBLISH_PORT
+          value: "4442"
+        - name: SE_EVENT_BUS_SUBSCRIBE_PORT
+          value: "4443"
+        volumeMounts:
+        - name: logs
+          mountPath: /var/log/selenium
+        livenessProbe:
+          httpGet:
+            path: /status
+            port: 4444
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /status
+            port: 4444
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: logs
+        emptyDir: {}
+      restartPolicy: Always
+

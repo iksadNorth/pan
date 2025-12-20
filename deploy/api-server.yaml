@@ -1,0 +1,96 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-server
+  namespace: trendgetter
+  labels:
+    app: api-server
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: ${PAN_API_SERVER_METALLB_IP}
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  selector:
+    app: api-server
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server
+  namespace: trendgetter
+  labels:
+    app: api-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-server
+  template:
+    metadata:
+      labels:
+        app: api-server
+    spec:
+      containers:
+      - name: api-server
+        image: api-server:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: SIDE_STORAGE_DIR
+          value: "/app/storage/sides"
+        - name: LOCK_STORAGE_DIR
+          value: "/app/storage/locks"
+        - name: SELENIUM_GRID_URL
+          value: "http://selenium-hub:4444"
+        - name: SESSION_POOL_INIT_TIMEOUT
+          value: "60.0"
+        - name: LOG_DIR
+          value: "/app/logs"
+        - name: LOG_LEVEL
+          value: "DEBUG"
+        # 프로덕션 환경에서는 이미지에 포함된 소스코드 사용
+        # 개발 환경에서 실시간 반영이 필요한 경우 ConfigMap 또는 InitContainer 사용 고려
+        command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+        volumeMounts:
+        - name: storage
+          mountPath: /app/storage
+        - name: logs
+          mountPath: /app/logs
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: storage
+        persistentVolumeClaim:
+          claimName: api-server-storage
+      - name: logs
+        persistentVolumeClaim:
+          claimName: api-server-logs
+      restartPolicy: Always
+
