@@ -51,6 +51,10 @@ spec:
           value: "4"
         - name: NODE_MAX_SESSION
           value: "4"
+        - name: SE_NODE_MAX_SESSIONS
+          value: "4"
+        - name: SE_NODE_OVERRIDE_MAX_SESSIONS
+          value: "true"
         - name: SE_VNC_PASSWORD
           value: "${SE_VNC_PASSWORD}"
         - name: SE_EVENT_BUS_HOST
