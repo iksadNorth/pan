@@ -33,7 +33,7 @@ Selenium Grid를 활용한 세션 풀링과 동시성 제어를 통해 안정적
 
 ### 시연 영상 1: Selenium IDE로 매크로 Side 파일 생성
 
-![demo](documents/demo-make-side.gif)
+![demo](documents/demo-make-side.gif) { width=1000px }
 
 *영상 1-1: Selenium IDE를 사용하여 웹 자동화 매크로를 녹화하고 .side 파일로 내보내는 과정*
 
