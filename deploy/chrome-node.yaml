@@ -34,6 +34,13 @@ spec:
       labels:
         app: chrome-node
     spec:
+      tolerations:
+      - key: cloud-server
+        operator: Equal
+        value: "true"
+        effect: NoSchedule
+      nodeSelector:
+        cloud-server: "true"
       containers:
       - name: chrome-node
         image: selenium/node-chrome:latest
@@ -70,11 +77,11 @@ spec:
           mountPath: /var/log/selenium
         resources:
           requests:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: "512Mi"
+            cpu: "250m"
           limits:
-            memory: "2Gi"
-            cpu: "2000m"
+            memory: "1Gi"
+            cpu: "1000m"
       volumes:
       - name: dshm
         emptyDir:
