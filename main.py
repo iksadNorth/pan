@@ -79,6 +79,14 @@ class SessionExecuteRequest(BaseModel):
     suite: str | None = None
     test: str | None = None
     param: dict[str, str] | None = None
+    lock_uuid: str | None = None
+
+
+class LockAcquireRequest(BaseModel):
+    """Lock 획득 요청 모델."""
+
+    ttl_seconds: float
+    timeout: float | None = None
 
 
 # Side 관련 엔드포인트
@@ -437,8 +445,30 @@ async def execute_session(session_id: str, request: SessionExecuteRequest) -> st
     Returns:
         실행 결과 HTML 문서
     """
-    # Lock 획득 (세션당 하나의 동작만 실행)
+    # Lock 확인 및 검증
     lock_key = f"session_{session_id}"
+    lock_info = lock_repository.get_lock_info(lock_key)
+    
+    # Lock이 존재하는 경우 UUID 검증
+    if lock_info.exists:
+        if request.lock_uuid is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"세션 '{session_id}'는 lock이 걸려있습니다. lock_uuid를 제공해야 합니다.",
+            )
+        if lock_info.lock_uuid != request.lock_uuid:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"세션 '{session_id}'에 대한 lock UUID가 일치하지 않습니다.",
+            )
+        # UUID가 일치하면 lock을 획득하지 않고 바로 실행
+        # (이미 lock이 있으므로)
+        project = await _load_and_render_side(request.side_id, request.param)
+        return await _execute_side_on_session(
+            session_id, project, request.suite, request.test
+        )
+    
+    # Lock이 없는 경우 기존 방식으로 lock 획득 후 실행
     try:
         with lock_repository.acquire(lock_key, timeout=30.0):
             # Side 파일 로드 및 렌더링
@@ -460,6 +490,115 @@ async def execute_session(session_id: str, request: SessionExecuteRequest) -> st
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"세션 실행 실패: {str(e)}",
+        )
+
+
+# Lock 관련 엔드포인트
+@log_method_call
+@app.post("/api/v1/locks/{session_id}", status_code=status.HTTP_201_CREATED)
+async def acquire_lock(session_id: str, request: LockAcquireRequest) -> dict:
+    """특정 세션에 대한 락을 획득합니다.
+
+    Args:
+        session_id: 세션 ID
+        request: Lock 획득 요청 (TTL 포함)
+
+    Returns:
+        Lock 획득 성공 메시지 및 만료 시간
+    """
+    lock_key = f"session_{session_id}"
+    try:
+        # FilesystemLockRepository의 내부 메서드를 사용하여 lock을 획득 (자동 해제하지 않음)
+        if isinstance(lock_repository, FilesystemLockRepository):
+            expires_at, lock_uuid = lock_repository._acquire_with_ttl_internal(
+                lock_key, request.ttl_seconds, request.timeout
+            )
+            return {
+                "message": f"세션 '{session_id}'에 대한 lock을 획득했습니다.",
+                "session_id": session_id,
+                "lock_uuid": lock_uuid,
+                "expires_at": expires_at.isoformat(),
+            }
+        else:
+            # 다른 구현체인 경우 context manager 사용 (자동 해제됨)
+            with lock_repository.acquire(
+                lock_key, timeout=request.timeout, ttl_seconds=request.ttl_seconds
+            ):
+                lock_info = lock_repository.get_lock_info(lock_key)
+                return {
+                    "message": f"세션 '{session_id}'에 대한 lock을 획득했습니다.",
+                    "session_id": session_id,
+                    "lock_uuid": lock_info.lock_uuid,
+                    "expires_at": lock_info.expires_at.isoformat() if lock_info.expires_at else None,
+                }
+    except TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_408_REQUEST_TIMEOUT,
+            detail=f"세션 '{session_id}'에 대한 lock 획득 시간 초과",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lock 획득 실패: {str(e)}",
+        )
+
+
+@log_method_call
+@app.delete("/api/v1/locks/{session_id}")
+async def release_lock(session_id: str) -> dict:
+    """특정 세션에 대한 락을 해제합니다.
+
+    Args:
+        session_id: 세션 ID
+
+    Returns:
+        Lock 해제 결과 메시지
+    """
+    lock_key = f"session_{session_id}"
+    try:
+        released = lock_repository.release(lock_key)
+        if released:
+            return {
+                "message": f"세션 '{session_id}'에 대한 lock을 해제했습니다.",
+                "session_id": session_id,
+            }
+        else:
+            return {
+                "message": f"세션 '{session_id}'에 대한 lock이 이미 없습니다.",
+                "session_id": session_id,
+            }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lock 해제 실패: {str(e)}",
+        )
+
+
+@log_method_call
+@app.get("/api/v1/locks/{session_id}")
+async def get_lock_info(session_id: str) -> dict:
+    """특정 세션에 대한 lock이 존재하는지 확인하고 만료 시간을 조회합니다.
+
+    Args:
+        session_id: 세션 ID
+
+    Returns:
+        Lock 정보 (존재 여부, 만료 시간)
+    """
+    lock_key = f"session_{session_id}"
+    try:
+        lock_info = lock_repository.get_lock_info(lock_key)
+        return {
+            "session_id": session_id,
+            "exists": lock_info.exists,
+            "lock_uuid": lock_info.lock_uuid,
+            "expires_at": lock_info.expires_at.isoformat() if lock_info.expires_at else None,
+            "is_expired": lock_info.is_expired() if lock_info.exists else False,
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lock 정보 조회 실패: {str(e)}",
         )
 
 
