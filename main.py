@@ -334,7 +334,10 @@ async def _load_and_render_side(side_id: str, params: dict[str, str] | None = No
 
 @log_method_call
 async def _execute_side_on_session(
-    session_id: str, project: SideProject, suite: str | None = None, test: str | None = None
+    session_id: str,
+    project: SideProject,
+    suite: str | None = None,
+    test: str | None = None,
 ) -> str:
     """특정 세션에서 Side 프로젝트를 실행합니다.
     

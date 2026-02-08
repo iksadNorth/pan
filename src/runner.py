@@ -220,9 +220,14 @@ class CommandExecutor:
 
     @log_method_call
     def handle_storeText(self, command: SideCommand) -> None:
-        # 단순 지원: storeText 는 assert 처럼 바로 출력만 수행
-        element = self._find_element(command.target)
-        _ = element.text  # 추후 확장을 위해 자리만 확보
+        # comment 필드에 JavaScript 코드가 있으면 실행
+        if command.comment and command.comment.strip():
+            js_code = command.comment.strip()
+            self.context.driver.execute_script(js_code)
+        else:
+            # comment가 없으면 기존 동작 유지 (하위 호환성)
+            element = self._find_element(command.target)
+            _ = element.text  # 추후 확장을 위해 자리만 확보
 
     @log_method_call
     def _find_element(self, locator: str):
