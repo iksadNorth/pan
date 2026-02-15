@@ -7,7 +7,7 @@ import logging
 import urllib.request
 from contextlib import contextmanager
 from threading import Lock
-from typing import Dict, Optional
+from typing import Dict, Generator, Optional
 
 from selenium import webdriver
 from selenium.webdriver.remote.webdriver import WebDriver
@@ -125,6 +125,22 @@ class SessionPool:
         """
         with self._lock:
             return session_id in self._sessions
+
+    def iter_available_sessions(self, lock_repository) -> Generator[str, None, None]:
+        """Lock이 잠겨있지 않은 사용 가능한 세션을 순회하는 generator입니다.
+
+        Args:
+            lock_repository: Lock 관리 Repository
+
+        Yields:
+            사용 가능한 세션 ID
+        """
+        available_sessions = self.list_sessions()
+        for session_id in available_sessions:
+            lock_key = f"session_{session_id}"
+            # Lock이 잠겨있는지 빠르게 확인
+            if not lock_repository.is_locked(lock_key):
+                yield session_id
 
     @contextmanager
     def acquire_session(self, session_id: str):

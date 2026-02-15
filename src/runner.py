@@ -21,6 +21,20 @@ from .models import SideCommand, SideProject, SideSuite, SideTest
 BrowserFactory = Callable[[], webdriver.Remote]
 
 
+@log_method_call
+def execute_javascript(driver: webdriver.Remote, code: str) -> Any:
+    """JavaScript 코드를 실행합니다.
+    
+    Args:
+        driver: WebDriver 인스턴스
+        code: 실행할 JavaScript 코드
+    
+    Returns:
+        JavaScript 실행 결과
+    """
+    return driver.execute_script(code)
+
+
 @dataclass(slots=True)
 class CommandContext:
     driver: webdriver.Remote
@@ -307,3 +321,30 @@ class SeleniumSideRunner:
             for command in test.commands:
                 executor.execute(command)
 
+    @log_method_call
+    def execute_side_on_driver(
+        self,
+        driver: webdriver.Remote,
+        suite: str | None = None,
+        test: str | None = None,
+    ) -> str:
+        """기존 WebDriver를 사용하여 Side 프로젝트를 실행합니다.
+        
+        Args:
+            driver: 사용할 WebDriver 인스턴스 (quit()하지 않음)
+            suite: 실행할 Suite 이름 (선택)
+            test: 실행할 Test 이름 (선택)
+        
+        Returns:
+            실행 후 페이지 소스
+        """
+        # Suite 또는 Test 실행
+        if test:
+            test_obj = self.project.get_test_by_name(test)
+            self.run_test_with_driver(test_obj, driver)
+        else:
+            suite_obj = self.project.get_suite(suite)
+            self.run_suite_with_driver(suite_obj, driver)
+        
+        # 실행 후 페이지 소스 반환
+        return driver.page_source

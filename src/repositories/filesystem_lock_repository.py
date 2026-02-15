@@ -131,16 +131,16 @@ class FilesystemLockRepository(LockRepository):
             lock_file.unlink()
             self._delete_lock_info(lock_key)
 
-    def _acquire_with_ttl_internal(self, lock_key: str, ttl_seconds: float, timeout: float | None = None) -> tuple[datetime, str]:
+    def _acquire_with_ttl_internal(self, lock_key: str, ttl_seconds: float | None, timeout: float | None = None) -> tuple[datetime | None, str]:
         """TTL과 함께 Lock을 획득합니다 (내부 메서드, 자동 해제하지 않음).
 
         Args:
             lock_key: Lock의 고유 키
-            ttl_seconds: Lock 유지 시간 (초)
+            ttl_seconds: Lock 유지 시간 (초). None이면 만료 시간 없음
             timeout: Lock 획득 대기 시간 (초). None이면 무한 대기
 
         Returns:
-            (만료 시간, lock_uuid) 튜플
+            (만료 시간, lock_uuid) 튜플 (만료 시간이 None이면 만료 시간 없음)
 
         Raises:
             TimeoutError: timeout 내에 lock을 획득하지 못한 경우
@@ -150,7 +150,7 @@ class FilesystemLockRepository(LockRepository):
         
         lock_file = self._get_lock_file_path(lock_key)
         start_time = time.time()
-        expires_at = datetime.now() + timedelta(seconds=ttl_seconds)
+        expires_at = datetime.now() + timedelta(seconds=ttl_seconds) if ttl_seconds is not None else None
         lock_uuid = str(uuid.uuid4())
 
         # Lock 획득 시도

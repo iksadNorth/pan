@@ -7,7 +7,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, status
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
@@ -22,6 +22,7 @@ from src.repositories import (
     SideRepository,
 )
 from src.session_pool import SessionPool
+from src.websocket_manager import WSConnectionManager
 
 # 로깅 설정
 setup_logging()
@@ -37,6 +38,11 @@ SESSION_POOL_INIT_TIMEOUT = float(os.getenv("SESSION_POOL_INIT_TIMEOUT", "30.0")
 side_repository: SideRepository = FilesystemSideRepository(SIDE_STORAGE_DIR)
 lock_repository: LockRepository = FilesystemLockRepository(LOCK_STORAGE_DIR)
 session_pool: SessionPool = SessionPool(SELENIUM_GRID_URL, init_timeout=SESSION_POOL_INIT_TIMEOUT)
+ws_manager: WSConnectionManager = WSConnectionManager(
+    lock_repository=lock_repository,
+    session_pool=session_pool,
+    side_repository=side_repository,
+)
 
 
 @log_method_call
@@ -400,21 +406,9 @@ async def execute_session_auto(request: SessionExecuteRequest) -> str:
     # Side 파일 로드 및 렌더링
     project = await _load_and_render_side(request.side_id, request.param)
     
-    # 사용 가능한 세션 목록 가져오기
-    available_sessions = session_pool.list_sessions()
-    if not available_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="사용 가능한 세션이 없습니다.",
-        )
-    
-    # 사용 가능한 세션 찾기 (lock이 잠겨있지 않은 세션)
-    for session_id in available_sessions:
+    # 사용 가능한 세션 찾기 (generator 사용)
+    for session_id in session_pool.iter_available_sessions(lock_repository):
         lock_key = f"session_{session_id}"
-        # Lock이 잠겨있는지 빠르게 확인
-        if lock_repository.is_locked(lock_key):
-            # 이 세션은 잠겨있음, 다음 세션 시도
-            continue
         
         # Lock이 잠겨있지 않으면 획득 시도
         try:
@@ -429,10 +423,10 @@ async def execute_session_auto(request: SessionExecuteRequest) -> str:
         except HTTPException:
             raise
     
-    # 모든 세션이 잠겨있음
+    # 사용 가능한 세션이 없거나 모든 세션이 사용 중
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="모든 세션이 사용 중입니다. 잠시 후 다시 시도해주세요.",
+        detail="사용 가능한 세션이 없습니다. 잠시 후 다시 시도해주세요.",
     )
 
 
@@ -520,7 +514,7 @@ async def acquire_lock(session_id: str, request: LockAcquireRequest) -> dict:
                 "message": f"세션 '{session_id}'에 대한 lock을 획득했습니다.",
                 "session_id": session_id,
                 "lock_uuid": lock_uuid,
-                "expires_at": expires_at.isoformat(),
+                "expires_at": expires_at.isoformat() if expires_at else None,
             }
         else:
             # 다른 구현체인 경우 context manager 사용 (자동 해제됨)
@@ -603,6 +597,70 @@ async def get_lock_info(session_id: str) -> dict:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Lock 정보 조회 실패: {str(e)}",
         )
+
+
+# WebSocket 엔드포인트
+@log_method_call
+@app.websocket("/ws/sessions")
+async def websocket_session_auto(websocket: WebSocket):
+    """웹소켓을 통해 사용 가능한 세션을 자동으로 찾아 연결합니다.
+    
+    연결 시 자동으로 세션에 락을 걸고, 연결 해제 시 자동으로 락을 해제합니다.
+    연결 중에는 JavaScript 코드 실행, Side 파일 실행, 페이지 소스 조회 등의 명령을 수행할 수 있습니다.
+    
+    Args:
+        websocket: 웹소켓 연결 객체
+    """
+    await websocket.accept()
+    
+    connection_id: str | None = None
+    try:
+        # 자동으로 사용 가능한 세션 찾아서 연결 및 락 획득
+        connection_id = await ws_manager.connect_auto(websocket)
+        connection = ws_manager.connections.get(connection_id)
+        session_id = connection.session_id if connection else "unknown"
+        logger.info(f"웹소켓 자동 연결 성공: session_id={session_id}, connection_id={connection_id}")
+        
+        # 연결 유지 및 메시지 처리
+        while True:
+            try:
+                # 메시지 수신
+                data = await websocket.receive_json()
+                
+                # 메시지 처리 및 응답 전송
+                result = await ws_manager.handle_message(connection_id, data)
+                await websocket.send_json(result)
+            except WebSocketDisconnect:
+                # 정상적인 연결 해제
+                break
+            except Exception as e:
+                # 메시지 처리 중 오류 발생
+                logger.error(f"웹소켓 메시지 처리 중 오류: {e}", exc_info=True)
+                await websocket.send_json({
+                    "type": "error",
+                    "message": f"메시지 처리 실패: {str(e)}"
+                })
+    except ValueError as e:
+        # 사용 가능한 세션 없음 또는 락 획득 실패
+        logger.warning(f"웹소켓 자동 연결 실패: {e}")
+        await websocket.close(code=1008, reason=str(e))
+    except WebSocketDisconnect:
+        # 연결이 이미 끊어진 경우
+        pass
+    except Exception as e:
+        # 기타 오류
+        logger.error(f"웹소켓 연결 중 오류: {e}", exc_info=True)
+        try:
+            await websocket.close(code=1011, reason="Internal server error")
+        except Exception:
+            pass
+    finally:
+        # 연결 해제 및 락 해제
+        if connection_id:
+            try:
+                await ws_manager.disconnect(connection_id)
+            except Exception as e:
+                logger.error(f"웹소켓 연결 해제 중 오류: {e}", exc_info=True)
 
 
 @log_method_call
