@@ -143,13 +143,14 @@ class SessionPool:
         if driver is None:
             raise ValueError(f"세션을 찾을 수 없습니다: {session_id}")
 
-        # 세션 유효성 확인
+        # 세션 유효성 확인 (재활용을 위해 최소한의 검사만 수행)
+        # session_id만 확인하고, 실제 사용 시 오류가 발생하면 그때 처리
         try:
-            # 간단한 세션 유효성 확인 (현재 URL 조회)
-            _ = driver.current_url
+            # session_id만 확인 (가벼운 검사)
+            _ = driver.session_id
         except Exception:
-            # 세션이 유효하지 않으면 풀에서 제거하고 새로 생성
-            logger.warning(f"세션이 유효하지 않음: {session_id}, 재생성 시도")
+            # 세션이 완전히 종료된 경우에만 재생성
+            logger.warning(f"세션이 완전히 종료됨: {session_id}, 재생성 시도")
             try:
                 driver.quit()
             except Exception:
@@ -163,6 +164,7 @@ class SessionPool:
                     command_executor=self.grid_url,
                     options=webdriver.ChromeOptions(),
                 )
+                new_driver.get("https://www.google.com")  # 초기 페이지 로드
                 new_session_id = new_driver.session_id
                 if not new_session_id:
                     raise ValueError("새 세션 ID를 가져올 수 없습니다")

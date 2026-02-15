@@ -9,8 +9,10 @@ services:
       - "4443:4443"
     environment:
       - GRID_MAX_SESSION=16
-      - GRID_BROWSER_TIMEOUT=300
-      - GRID_TIMEOUT=300
+      - GRID_BROWSER_TIMEOUT=0  # 브라우저 타임아웃 비활성화 (무한)
+      - GRID_TIMEOUT=0  # Grid 타임아웃 비활성화 (무한)
+      - SE_SESSION_REQUEST_TIMEOUT=0  # 세션 요청 타임아웃 비활성화 (무한)
+      - SE_SESSION_RETRY_INTERVAL=300  # 세션 재시도 간격 (5분)
       - SE_EVENT_BUS_HOST=selenium-hub
       - SE_EVENT_BUS_PUBLISH_PORT=4442
       - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
@@ -37,6 +39,8 @@ services:
       - HUB_PORT=4444
       - NODE_MAX_INSTANCES=4
       - NODE_MAX_SESSION=4
+      - SE_NODE_SESSION_TIMEOUT=0  # Node 세션 타임아웃 비활성화 (무한 세션)
+      - SE_SESSION_REQUEST_TIMEOUT=0  # 세션 요청 타임아웃 비활성화
       - SE_VNC_PASSWORD=q1w2e3r4
       - SE_EVENT_BUS_HOST=selenium-hub
       - SE_EVENT_BUS_PUBLISH_PORT=4442
@@ -62,6 +66,8 @@ services:
   #     - HUB_PORT=4444
   #     - NODE_MAX_INSTANCES=4
   #     - NODE_MAX_SESSION=4
+  #     - SE_NODE_SESSION_TIMEOUT=0  # Node 세션 타임아웃 비활성화 (무한 세션)
+  #     - SE_SESSION_REQUEST_TIMEOUT=0  # 세션 요청 타임아웃 비활성화
   #     - SE_VNC_PASSWORD=q1w2e3r4
   #     - SE_EVENT_BUS_HOST=selenium-hub
   #     - SE_EVENT_BUS_PUBLISH_PORT=4442
