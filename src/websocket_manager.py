@@ -14,9 +14,9 @@ from src.logger_config import get_logger, log_method_call
 from src.repositories import (
     FilesystemLockRepository,
     LockRepository,
-    SideRepository,
 )
 from src.session_pool import SessionPool
+from src.side_service import SideService
 
 logger = get_logger(__name__)
 
@@ -54,18 +54,18 @@ class WSConnectionManager:
         self,
         lock_repository: LockRepository,
         session_pool: SessionPool,
-        side_repository: SideRepository,
+        side_service: SideService,
     ):
         """WSConnectionManager를 초기화합니다.
 
         Args:
             lock_repository: Lock 관리 Repository
             session_pool: 세션 풀
-            side_repository: Side 파일 Repository
+            side_service: Side 파일 서비스
         """
         self.lock_repository = lock_repository
         self.session_pool = session_pool
-        self.side_repository = side_repository
+        self.side_service = side_service
         self.connections: dict[str, WSConnection] = {}
         self._handlers = {
             "execute_js": self._handle_execute_js,
@@ -87,7 +87,8 @@ class WSConnectionManager:
             ValueError: 사용 가능한 세션이 없거나 락 획득 실패 시
         """
         # 사용 가능한 세션 찾기 (generator 사용)
-        for session_id in self.session_pool.iter_available_sessions(self.lock_repository):
+        available_sessions = self.session_pool.list_sessions()
+        for session_id in self.lock_repository.filter_available_sessions(available_sessions):
             lock_key = f"session_{session_id}"
             
             # Lock이 잠겨있지 않으면 획득 시도
@@ -210,8 +211,7 @@ class WSConnectionManager:
         Returns:
             실행 결과 딕셔너리
         """
-        from src import SeleniumSideRunner, load_side_project
-        from src.parser import Parser
+        from src import SeleniumSideRunner
 
         # Pydantic 모델로 검증
         try:
@@ -219,25 +219,13 @@ class WSConnectionManager:
         except ValidationError as e:
             return {"type": "error", "message": f"요청 검증 실패: {e.errors()[0]['msg']}"}
 
-        # Side 파일 로드 및 렌더링 (main.py의 _load_and_render_side 로직 재사용)
+        # Side 파일 로드 및 렌더링 (SideService 사용)
         try:
-            side_content = self.side_repository.get(request.side_id)
-        except FileNotFoundError:
-            return {"type": "error", "message": f"Side 파일을 찾을 수 없습니다: {request.side_id}"}
-
-        # jinja2 템플릿 렌더링
-        if request.param:
-            try:
-                parser = Parser(request.param)
-                side_content = parser.render(side_content)
-            except Exception as e:
-                return {"type": "error", "message": f"템플릿 렌더링 실패: {str(e)}"}
-
-        # Side 프로젝트 로드
-        try:
-            project = load_side_project(side_content)
-        except Exception as e:
-            return {"type": "error", "message": f"Side 파일 파싱 실패: {str(e)}"}
+            project = self.side_service.load_and_render(request.side_id, request.param)
+        except FileNotFoundError as e:
+            return {"type": "error", "message": str(e)}
+        except ValueError as e:
+            return {"type": "error", "message": str(e)}
 
         # 세션 획득 및 Side 실행 (runner.py의 execute_side_on_driver 메서드 재사용)
         loop = asyncio.get_event_loop()

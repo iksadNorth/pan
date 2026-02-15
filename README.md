@@ -80,17 +80,115 @@ Selenium Grid를 활용한 세션 풀링과 동시성 제어를 통해 안정적
 
 ## 프로젝트 구조
 
+이 프로젝트는 **단일 책임 원칙(SRP)**과 **관심사의 분리(SoC)**를 엄격히 준수하도록 설계되었습니다. 각 모듈은 명확한 역할과 책임을 가지며, 모듈 간 의존성은 최소화되어 있습니다.
+
+### ⚠️ 중요: 코드 수정 시 주의사항
+
+**이 프로젝트의 모듈 구조는 신중하게 설계된 책임 분리를 기반으로 합니다. 코드를 수정하기 전에 반드시 다음 사항을 확인하세요:**
+
+1. **모듈 간 의존성 방향을 확인하세요**
+   - 상위 레이어(API) → 서비스 레이어 → 도메인 레이어 → 인프라 레이어 순서로 의존해야 합니다
+   - 역방향 의존성을 만들지 마세요
+
+2. **각 모듈의 책임 범위를 벗어나지 마세요**
+   - 예: `session_pool.py`는 세션 관리만 담당하며, Lock 관련 로직은 포함하지 않습니다
+   - 예: `websocket_manager.py`는 웹소켓 연결 관리만 담당하며, Side 파일 로드/렌더링은 `SideService`에 위임합니다
+
+3. **로직 중복을 만들지 마세요**
+   - 공통 로직은 적절한 서비스나 유틸리티 모듈에 위치시켜야 합니다
+   - 예: Side 파일 로드/렌더링은 `SideService`에만 존재해야 합니다
+
+4. **Repository 패턴을 준수하세요**
+   - 데이터 영속성 로직은 반드시 `repositories/` 디렉토리의 인터페이스를 통해 접근해야 합니다
+   - 직접 파일 시스템 접근을 하지 마세요
+
+5. **예외 처리는 `exception_handlers.py`에서 관리합니다**
+   - 도메인 예외는 커스텀 예외 클래스로 정의하고, HTTP 예외 변환은 예외 핸들러에서 처리합니다
+   - 엔드포인트에서 직접 예외 변환 로직을 작성하지 마세요
+
+### 디렉토리 구조
+
 ```
-src/
-├── models.py              # 데이터 모델 (SideProject, SideTest, SideSuite, SideCommand)
-├── loader.py              # Side 파일 로딩 및 파싱
-├── parser.py              # Jinja2 템플릿 파서
-├── runner.py              # Side 실행 로직
-├── session_pool.py        # Selenium Grid 세션 풀 관리
-├── logger_config.py       # 로깅 설정
-└── repositories/
-    ├── side_repository.py              # Side 파일 저장소 인터페이스
-    ├── filesystem_side_repository.py   # FileSystem 기반 side 파일 저장소 구현체
-    ├── lock_repository.py              # Lock 관리 인터페이스
-    └── filesystem_lock_repository.py   # FileSystem 기반 Lock 관리 구현체
+pan/
+├── main.py                           # FastAPI 애플리케이션 진입점
+├── src/
+│   ├── models.py                     # 도메인 모델 정의
+│   ├── loader.py                     # Side 파일 JSON 파싱
+│   ├── parser.py                     # Jinja2 템플릿 렌더링
+│   ├── runner.py                     # Selenium 명령 실행 엔진
+│   ├── side_service.py              # Side 파일 로드/렌더링 서비스
+│   ├── session_pool.py              # Selenium Grid 세션 풀 관리
+│   ├── websocket_manager.py         # 웹소켓 연결 및 세션 관리
+│   ├── exception_handlers.py         # FastAPI 예외 핸들러 등록
+│   ├── logger_config.py             # 로깅 설정
+│   ├── README.md                     # src/ 디렉토리 모듈 상세 설명
+│   └── repositories/                 # 저장소 패턴 구현
+│       ├── side_repository.py       # Side 파일 저장소 인터페이스
+│       ├── filesystem_side_repository.py  # FileSystem 기반 구현체
+│       ├── lock_repository.py       # Lock 관리 인터페이스
+│       ├── filesystem_lock_repository.py # FileSystem 기반 구현체
+│       └── README.md                 # repositories/ 디렉토리 모듈 상세 설명
+└── storage/
+    ├── sides/                        # Side 파일 저장 디렉토리
+    ├── locks/                        # Lock 파일 저장 디렉토리
+    └── js/                           # JavaScript 파일 저장 디렉토리
 ```
+
+### 각 모듈의 역할과 책임
+
+> **상세한 모듈 설명은 각 디렉토리의 README.md를 참조하세요:**
+> - `src/README.md`: src/ 디렉토리의 모든 모듈 상세 설명
+> - `src/repositories/README.md`: repositories/ 디렉토리의 모든 모듈 상세 설명
+
+#### `main.py`
+- **역할**: FastAPI 애플리케이션 진입점 및 HTTP 엔드포인트 정의
+- **책임**: FastAPI 앱 초기화, REST API/웹소켓 엔드포인트 정의, 의존성 주입
+- **수정 시 주의사항**: 비즈니스 로직은 서비스 레이어에 위임, 예외 처리는 `exception_handlers.py` 사용
+
+#### `src/` 디렉토리
+- **상세 설명**: [src/README.md](src/README.md) 참조
+- 주요 모듈:
+  - `models.py`: 도메인 모델 정의
+  - `loader.py`: Side 파일 JSON 파싱
+  - `parser.py`: Jinja2 템플릿 렌더링
+  - `runner.py`: Selenium 명령 실행 엔진
+  - `side_service.py`: Side 파일 로드/렌더링 서비스
+  - `session_pool.py`: Selenium Grid 세션 풀 관리
+  - `websocket_manager.py`: 웹소켓 연결 및 세션 관리
+  - `exception_handlers.py`: FastAPI 예외 핸들러 등록
+
+#### `src/repositories/` 디렉토리
+- **상세 설명**: [src/repositories/README.md](src/repositories/README.md) 참조
+- 주요 모듈:
+  - `side_repository.py`: Side 파일 저장소 인터페이스
+  - `filesystem_side_repository.py`: FileSystem 기반 구현체
+  - `lock_repository.py`: Lock 관리 인터페이스 및 세션 필터링
+  - `filesystem_lock_repository.py`: FileSystem 기반 구현체
+
+### 모듈 간 의존성 관계
+
+```
+main.py (API Layer)
+  ├── side_service.py (Service Layer)
+  │   ├── side_repository.py (Infrastructure Layer)
+  │   ├── parser.py (Domain Layer)
+  │   └── loader.py (Domain Layer)
+  ├── websocket_manager.py (Service Layer)
+  │   ├── side_service.py
+  │   ├── session_pool.py (Infrastructure Layer)
+  │   └── lock_repository.py (Infrastructure Layer)
+  ├── runner.py (Domain Layer)
+  │   └── models.py (Domain Layer)
+  └── exception_handlers.py (API Layer)
+      └── side_service.py (예외 클래스)
+```
+
+### 인수인계 시 확인사항
+
+새로운 개발자나 AI 에이전트가 코드를 수정할 때 다음을 확인하세요:
+
+1. **모듈의 원래 책임을 벗어나지 않았는가?**
+2. **로직 중복이 발생하지 않았는가?** (특히 Side 파일 로드/렌더링)
+3. **의존성 방향이 올바른가?** (상위 → 하위 레이어)
+4. **예외 처리가 `exception_handlers.py`에 등록되어 있는가?**
+5. **Repository 패턴을 준수하고 있는가?**

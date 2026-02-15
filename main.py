@@ -14,7 +14,8 @@ from pydantic import BaseModel
 from src import SeleniumSideRunner, load_side_project
 from src.models import SideProject
 from src.logger_config import get_logger, log_method_call, setup_logging
-from src.parser import Parser
+from src.side_service import SideService
+from src.exception_handlers import register_exception_handlers
 from src.repositories import (
     FilesystemLockRepository,
     FilesystemSideRepository,
@@ -38,10 +39,11 @@ SESSION_POOL_INIT_TIMEOUT = float(os.getenv("SESSION_POOL_INIT_TIMEOUT", "30.0")
 side_repository: SideRepository = FilesystemSideRepository(SIDE_STORAGE_DIR)
 lock_repository: LockRepository = FilesystemLockRepository(LOCK_STORAGE_DIR)
 session_pool: SessionPool = SessionPool(SELENIUM_GRID_URL, init_timeout=SESSION_POOL_INIT_TIMEOUT)
+side_service: SideService = SideService(side_repository)
 ws_manager: WSConnectionManager = WSConnectionManager(
     lock_repository=lock_repository,
     session_pool=session_pool,
-    side_repository=side_repository,
+    side_service=side_service,
 )
 
 
@@ -75,6 +77,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# 예외 핸들러 등록
+register_exception_handlers(app)
 
 
 # Pydantic 모델
@@ -295,50 +300,6 @@ async def list_sessions() -> dict:
 
 
 @log_method_call
-async def _load_and_render_side(side_id: str, params: dict[str, str] | None = None) -> SideProject:
-    """Side 파일을 로드하고 렌더링하여 SideProject 객체를 반환합니다.
-    
-    Args:
-        side_id: Side 파일 ID
-        params: jinja2 템플릿 파라미터 (선택)
-    
-    Returns:
-        SideProject 객체
-    
-    Raises:
-        HTTPException: 파일을 찾을 수 없거나 파싱 실패 시
-    """
-    # Side 파일 조회
-    try:
-        side_content = side_repository.get(side_id)
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Side 파일을 찾을 수 없습니다: {side_id}",
-        )
-    
-    # jinja2 템플릿 렌더링 (param이 있는 경우)
-    if params:
-        try:
-            parser = Parser(params)
-            side_content = parser.render(side_content)
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"템플릿 렌더링 실패: {str(e)}",
-            )
-    
-    # Side 프로젝트 로드
-    try:
-        return load_side_project(side_content)
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Side 파일 파싱 실패: {str(e)}",
-        )
-
-
-@log_method_call
 async def _execute_side_on_session(
     session_id: str,
     project: SideProject,
@@ -404,10 +365,11 @@ async def execute_session_auto(request: SessionExecuteRequest) -> str:
         실행 결과 HTML 문서
     """
     # Side 파일 로드 및 렌더링
-    project = await _load_and_render_side(request.side_id, request.param)
+    project = side_service.load_and_render(request.side_id, request.param)
     
     # 사용 가능한 세션 찾기 (generator 사용)
-    for session_id in session_pool.iter_available_sessions(lock_repository):
+    available_sessions = session_pool.list_sessions()
+    for session_id in lock_repository.filter_available_sessions(available_sessions):
         lock_key = f"session_{session_id}"
         
         # Lock이 잠겨있지 않으면 획득 시도
@@ -460,7 +422,7 @@ async def execute_session(session_id: str, request: SessionExecuteRequest) -> st
             )
         # UUID가 일치하면 lock을 획득하지 않고 바로 실행
         # (이미 lock이 있으므로)
-        project = await _load_and_render_side(request.side_id, request.param)
+        project = side_service.load_and_render(request.side_id, request.param)
         return await _execute_side_on_session(
             session_id, project, request.suite, request.test
         )
@@ -469,7 +431,7 @@ async def execute_session(session_id: str, request: SessionExecuteRequest) -> st
     try:
         with lock_repository.acquire(lock_key, timeout=30.0):
             # Side 파일 로드 및 렌더링
-            project = await _load_and_render_side(request.side_id, request.param)
+            project = side_service.load_and_render(request.side_id, request.param)
             
             # 세션에서 실행
             return await _execute_side_on_session(

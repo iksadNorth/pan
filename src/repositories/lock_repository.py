@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from contextlib import AbstractContextManager
 from datetime import datetime
+from typing import Generator
 
 
 class LockInfo:
@@ -91,3 +92,16 @@ class LockRepository(ABC):
         """
         pass
 
+    def filter_available_sessions(self, session_ids: list[str]) -> Generator[str, None, None]:
+        """Lock이 잠겨있지 않은 사용 가능한 세션을 필터링합니다.
+
+        Args:
+            session_ids: 세션 ID 목록
+
+        Yields:
+            Lock이 잠겨있지 않은 세션 ID
+        """
+        for session_id in session_ids:
+            lock_key = f"session_{session_id}"
+            if not self.is_locked(lock_key):
+                yield session_id
