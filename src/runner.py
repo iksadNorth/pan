@@ -24,21 +24,44 @@ BrowserFactory = Callable[[], webdriver.Remote]
 @log_method_call
 def execute_javascript(driver: webdriver.Remote, code: str) -> Any:
     """JavaScript 코드를 실행합니다.
-    
+
     Args:
         driver: WebDriver 인스턴스
         code: 실행할 JavaScript 코드
-    
+
     Returns:
         JavaScript 실행 결과
     """
     return driver.execute_script(code)
 
 
+def _wrap_js_for_async(js_code: str) -> str:
+    """comment JS를 execute_async_script에서 쓸 수 있게 래핑합니다.
+
+    - 비동기: 스크립트가 done(...)을 호출하면 그대로 전달.
+    - 동기: 스크립트가 done을 호출하지 않으면 반환값(또는 undefined)으로 done 호출.
+    - execute_async_script는 이 함수를 콜백과 함께 호출하므로, 인자로 realDone을 받아야 함.
+    """
+    # done 중복 호출 방지, 동기 스크립트는 반환값으로 done 호출
+    return f"""function(realDone) {{
+  var doneCalled = false;
+  var done = function(val) {{ if (!doneCalled) {{ doneCalled = true; realDone(val); }} }};
+  try {{
+    var result = (function(done) {{
+      {js_code}
+    }})(done);
+    if (!doneCalled) realDone(result);
+  }} catch (e) {{
+    if (!doneCalled) realDone({{ error: String(e) }});
+  }}
+}}"""
+
+
 @dataclass(slots=True)
 class CommandContext:
     driver: webdriver.Remote
     base_url: str | None = None
+    result_collector: dict | None = None
 
 
 class CommandExecutor:
@@ -96,6 +119,7 @@ class CommandExecutor:
             "assertText": self.handle_assertText,
             "assertElementPresent": self.handle_assertElementPresent,
             "storeText": self.handle_storeText,
+            "runScript": self.handle_runScript,
         }
 
     @log_method_call
@@ -221,6 +245,13 @@ class CommandExecutor:
         self.context.driver.set_window_size(width, height)
 
     @log_method_call
+    def handle_runScript(self, command: SideCommand) -> None:
+        """runScript: target에 있는 JavaScript 코드를 실행합니다 (Selenium IDE 호환)."""
+        script = (command.target or "").strip()
+        if script:
+            self.context.driver.execute_script(script)
+
+    @log_method_call
     def handle_assertText(self, command: SideCommand) -> None:
         element = self._find_element(command.target)
         actual = element.text.strip()
@@ -234,10 +265,14 @@ class CommandExecutor:
 
     @log_method_call
     def handle_storeText(self, command: SideCommand) -> None:
-        # comment 필드에 JavaScript 코드가 있으면 실행
+        # comment 필드에 JavaScript 코드가 있으면 execute_async_script로 실행
+        # (동기 스크립트는 반환값으로, 비동기 스크립트는 done(...) 호출로 결과 전달)
         if command.comment and command.comment.strip():
             js_code = command.comment.strip()
-            self.context.driver.execute_script(js_code)
+            wrapped = _wrap_js_for_async(js_code)
+            result = self.context.driver.execute_async_script(wrapped)
+            if self.context.result_collector is not None:
+                self.context.result_collector["async_result"] = result
         else:
             # comment가 없으면 기존 동작 유지 (하위 호환성)
             element = self._find_element(command.target)
@@ -314,8 +349,17 @@ class SeleniumSideRunner:
         self._run_tests(driver, tests)
 
     @log_method_call
-    def _run_tests(self, driver, tests: Iterable[SideTest]) -> None:
-        context = CommandContext(driver=driver, base_url=self.base_url)
+    def _run_tests(
+        self,
+        driver,
+        tests: Iterable[SideTest],
+        result_collector: dict | None = None,
+    ) -> None:
+        context = CommandContext(
+            driver=driver,
+            base_url=self.base_url,
+            result_collector=result_collector,
+        )
         executor = CommandExecutor(context)
         for test in tests:
             for command in test.commands:
@@ -327,24 +371,25 @@ class SeleniumSideRunner:
         driver: webdriver.Remote,
         suite: str | None = None,
         test: str | None = None,
-    ) -> str:
+    ) -> tuple[str, Any | None]:
         """기존 WebDriver를 사용하여 Side 프로젝트를 실행합니다.
-        
+
         Args:
             driver: 사용할 WebDriver 인스턴스 (quit()하지 않음)
             suite: 실행할 Suite 이름 (선택)
             test: 실행할 Test 이름 (선택)
-        
+
         Returns:
-            실행 후 페이지 소스
+            (page_source, async_result) — executeAsyncScript 결과가 있으면 async_result에 담김
         """
-        # Suite 또는 Test 실행
+        result_collector: dict[str, Any] = {}
         if test:
             test_obj = self.project.get_test_by_name(test)
-            self.run_test_with_driver(test_obj, driver)
+            driver.implicitly_wait(self.implicit_wait)
+            self._run_tests(driver, [test_obj], result_collector=result_collector)
         else:
             suite_obj = self.project.get_suite(suite)
-            self.run_suite_with_driver(suite_obj, driver)
-        
-        # 실행 후 페이지 소스 반환
-        return driver.page_source
+            driver.implicitly_wait(self.implicit_wait)
+            tests = [self.project.tests[tid] for tid in suite_obj.tests]
+            self._run_tests(driver, tests, result_collector=result_collector)
+        return driver.page_source, result_collector.get("async_result")

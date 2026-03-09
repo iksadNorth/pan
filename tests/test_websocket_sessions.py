@@ -252,7 +252,7 @@ async def test_websocket_e2e_example(test_server, mock_webdriver):
         # 4. Side 파일 실행 명령 전송
         with patch("src.websocket_manager.SeleniumSideRunner") as mock_runner_class:
             mock_runner = Mock()
-            mock_runner.execute_side_on_driver = Mock(return_value="<html>Side executed</html>")
+            mock_runner.execute_side_on_driver = Mock(return_value=("<html>Side executed</html>", None))
             mock_runner_class.return_value = mock_runner
             
             await websocket.send(json.dumps({

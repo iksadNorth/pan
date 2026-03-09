@@ -126,79 +126,172 @@ class SessionPool:
         with self._lock:
             return session_id in self._sessions
 
-    @contextmanager
-    def acquire_session(self, session_id: str):
-        """세션을 획득하고 사용 후 풀에 반환합니다.
+    def _is_session_error(self, exception: Exception) -> bool:
+        """예외가 세션 관련 오류인지 확인합니다.
+        
+        Args:
+            exception: 확인할 예외
+            
+        Returns:
+            세션 관련 오류 여부
+        """
+        error_msg = str(exception).lower()
+        return (
+            "session" in error_msg and 
+            ("not found" in error_msg or "invalid" in error_msg or "unable to find" in error_msg or "nosuchsession" in error_msg)
+        )
+    
+    def _recreate_session(self, session_id: str) -> WebDriver:
+        """세션을 재생성합니다.
+        
+        Args:
+            session_id: 재생성할 세션 ID
+            
+        Returns:
+            새로 생성된 WebDriver 인스턴스
+            
+        Raises:
+            ValueError: 세션 재생성 실패 시
+        """
+        logger.warning(f"Grid에서 세션이 종료됨: {session_id}, 재생성 시도")
+        
+        # 기존 세션 정리
+        old_driver = self._sessions.get(session_id)
+        if old_driver:
+            try:
+                old_driver.quit()
+            except Exception:
+                pass
+            with self._lock:
+                self._sessions.pop(session_id, None)
+        
+        # 새 세션 생성
+        try:
+            new_driver = webdriver.Remote(
+                command_executor=self.grid_url,
+                options=webdriver.ChromeOptions(),
+            )
+            new_driver.get("https://www.google.com")  # 초기 페이지 로드
+            new_session_id = new_driver.session_id
+            if not new_session_id:
+                raise ValueError("새 세션 ID를 가져올 수 없습니다")
+            
+            with self._lock:
+                # 원래 session_id를 키로 사용하여 일관성 유지
+                # (실제로는 새 세션이지만, API 호출자는 같은 ID를 사용)
+                self._sessions[session_id] = new_driver
+                # 새 session_id도 별도로 저장 (나중에 정리할 때 사용)
+                if new_session_id != session_id:
+                    self._sessions[new_session_id] = new_driver
+            
+            logger.info(f"세션 재생성 완료: {new_session_id} (요청된 ID: {session_id})")
+            return new_driver
+        except Exception as e:
+            raise ValueError(f"세션 재생성 실패: {e}") from e
 
+    def _get_valid_session(self, session_id: str) -> WebDriver:
+        """유효한 세션을 획득합니다. 세션이 없거나 종료된 경우 재생성합니다.
+        
         Args:
             session_id: 세션 ID
-
-        Yields:
+            
+        Returns:
             WebDriver 인스턴스
-
+            
         Raises:
-            ValueError: 세션이 존재하지 않을 때
+            ValueError: 세션을 찾을 수 없거나 재생성 실패 시
         """
         driver = self.get_session(session_id)
         if driver is None:
             raise ValueError(f"세션을 찾을 수 없습니다: {session_id}")
 
-        # 세션 유효성 확인 (재활용을 위해 최소한의 검사만 수행)
-        # session_id만 확인하고, 실제 사용 시 오류가 발생하면 그때 처리
+        # 세션 유효성 확인
         try:
-            # session_id만 확인 (가벼운 검사)
             _ = driver.session_id
-        except Exception:
-            # 세션이 완전히 종료된 경우에만 재생성
-            logger.warning(f"세션이 완전히 종료됨: {session_id}, 재생성 시도")
-            try:
-                driver.quit()
-            except Exception:
-                pass
-            with self._lock:
-                self._sessions.pop(session_id, None)
-
-            # 새 세션 생성 (원래 session_id 위치에 저장하여 일관성 유지)
-            try:
-                new_driver = webdriver.Remote(
-                    command_executor=self.grid_url,
-                    options=webdriver.ChromeOptions(),
-                )
-                new_driver.get("https://www.google.com")  # 초기 페이지 로드
-                new_session_id = new_driver.session_id
-                if not new_session_id:
-                    raise ValueError("새 세션 ID를 가져올 수 없습니다")
-                with self._lock:
-                    # 원래 session_id를 키로 사용하여 일관성 유지
-                    # (실제로는 새 세션이지만, API 호출자는 같은 ID를 사용)
-                    self._sessions[session_id] = new_driver
-                    # 새 session_id도 별도로 저장 (나중에 정리할 때 사용)
-                    if new_session_id != session_id:
-                        self._sessions[new_session_id] = new_driver
-                logger.info(f"세션 재생성 완료: {new_session_id} (요청된 ID: {session_id})")
-                driver = new_driver
-            except Exception as e:
-                raise ValueError(f"세션 재생성 실패: {e}") from e
-
-        try:
-            # 세션을 yield하고 사용 후 자동으로 풀에 반환됨 (제거하지 않음)
-            yield driver
+            return driver
         except Exception as e:
-            logger.error(f"세션 사용 중 오류 발생: {e}")
-            # 심각한 오류로 세션이 완전히 손상된 경우에만 풀에서 제거
+            if self._is_session_error(e):
+                # 세션이 종료된 경우 재생성
+                return self._recreate_session(session_id)
+            # 기타 예외는 무시하고 계속 진행 (실제 사용 시 처리)
+            return driver
+
+    def _should_retry(self, exception: Exception, attempt: int, max_retries: int) -> bool:
+        """예외가 재시도 가능한 세션 오류인지 확인합니다.
+        
+        Args:
+            exception: 확인할 예외
+            attempt: 현재 시도 횟수
+            max_retries: 최대 재시도 횟수
+            
+        Returns:
+            재시도 가능 여부
+        """
+        if attempt >= max_retries - 1:
+            return False
+        
+        error_msg = str(exception).lower()
+        return (
+            self._is_session_error(exception) or
+            "세션" in error_msg or
+            "재생성" in error_msg
+        )
+
+    @contextmanager
+    def acquire_session(self, session_id: str, max_retries: int = 2):
+        """세션을 획득하고 사용 후 풀에 반환합니다.
+        
+        세션 오류 발생 시 자동으로 재생성하고 재시도합니다.
+
+        Args:
+            session_id: 세션 ID
+            max_retries: 최대 재시도 횟수 (기본값: 2)
+
+        Yields:
+            WebDriver 인스턴스
+
+        Raises:
+            ValueError: 세션이 존재하지 않거나 재생성 실패 시
+        """
+        last_exception = None
+        
+        for attempt in range(max_retries):
+            # 세션 획득 및 유효성 검사
             try:
-                # 세션 상태 확인
-                _ = driver.session_id
-            except Exception:
-                # 세션이 완전히 손상된 경우에만 제거
-                logger.error(f"세션이 손상되어 풀에서 제거: {session_id}")
-                try:
-                    driver.quit()
-                except Exception:
-                    pass
-                with self._lock:
-                    self._sessions.pop(session_id, None)
-            raise
+                driver = self._get_valid_session(session_id)
+            except ValueError as e:
+                if self._should_retry(e, attempt, max_retries):
+                    logger.warning(f"세션 오류 감지: {session_id}, 재시도 ({attempt + 1}/{max_retries})")
+                    last_exception = e
+                    try:
+                        self._recreate_session(session_id)
+                        continue
+                    except Exception as re:
+                        raise ValueError(f"세션 재생성 실패: {re}") from re
+                raise
+
+            # 세션 사용
+            try:
+                yield driver
+                return  # 성공적으로 완료
+            except Exception as e:
+                # 세션 사용 중 발생한 예외 처리
+                if self._should_retry(e, attempt, max_retries):
+                    logger.warning(f"세션 사용 중 Grid에서 세션 종료 감지: {session_id}, 재시도 ({attempt + 1}/{max_retries})")
+                    last_exception = e
+                    try:
+                        self._recreate_session(session_id)
+                        continue
+                    except Exception as re:
+                        raise ValueError(f"세션 재생성 실패: {re}") from re
+                # 재시도 불가능한 예외는 그대로 전파
+                logger.error(f"세션 사용 중 오류 발생: {e}")
+                raise
+        
+        # 모든 재시도 실패
+        if last_exception:
+            raise ValueError(f"세션 재시도 실패 (최대 재시도 횟수 초과): {last_exception}") from last_exception
+        raise ValueError(f"세션을 찾을 수 없습니다: {session_id}")
 
     def cleanup(self) -> None:
         """세션 풀의 모든 세션을 정리합니다."""

@@ -330,17 +330,11 @@ async def _execute_side_on_session(
                 base_url=project.url,
             )
             
-            # Suite 또는 Test 실행 (세션은 풀에 반환됨)
-            if test:
-                test_obj = project.get_test_by_name(test)
-                runner.run_test_with_driver(test_obj, driver)
-            else:
-                suite_obj = project.get_suite(suite)
-                runner.run_suite_with_driver(suite_obj, driver)
-            
-            # 실행 후 페이지 소스 반환
-            return driver.page_source
-    
+            # execute_side_on_driver로 실행 (executeAsyncScript 결과 수집 가능)
+            page_source, _async_result = runner.execute_side_on_driver(
+                driver, suite=suite, test=test
+            )
+            return page_source
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

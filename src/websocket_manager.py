@@ -239,11 +239,14 @@ class WSConnectionManager:
                 )
 
                 # runner.py의 execute_side_on_driver 메서드 재사용
-                page_source = await loop.run_in_executor(
+                page_source, async_result = await loop.run_in_executor(
                     None,
                     lambda: runner.execute_side_on_driver(driver, suite=request.suite, test=request.test)
                 )
-                return {"type": "result", "data": page_source}
+                out = {"type": "result", "data": page_source}
+                if async_result is not None:
+                    out["async_result"] = async_result
+                return out
         except ValueError as e:
             return {"type": "error", "message": str(e)}
         except Exception as e:
