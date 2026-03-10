@@ -133,4 +133,15 @@ class Parser:
         # json.dumps를 사용하면 문자열이 JSON-safe하게 이스케이프되고, 
         # 앞뒤의 따옴표를 제거하면 실제 JS 코드로 사용 가능
         return json.dumps(rendered_js)[1:-1]  # 앞뒤 따옴표 제거
+    
+    def js_click_button(self, btn_name: str) -> str:
+        """JS 클릭 버튼 코드를 반환합니다.
+        
+        Args:
+            btn_name: 클릭할 버튼 이름
+        
+        Returns:
+            JS 클릭 버튼 코드
+        """
+        return self.js_file(f"click_button.jinja2.js", {"button_text": btn_name})
 
