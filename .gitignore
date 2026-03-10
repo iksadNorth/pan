@@ -2,9 +2,9 @@
 logs/
 *.log
 
-# Storage
-storage/
-!storage/js/*
+# Storage (디렉터리 자체는 제외하지 않아야 하위 negate가 동작함)
+storage/*
+!storage/js/
 
 # Python
 __pycache__/
