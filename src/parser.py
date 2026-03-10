@@ -92,7 +92,7 @@ class Parser:
         """
         return Faker('ko_KR')
     
-    def js_file(self, filename: str) -> str:
+    def js_file(self, filename: str, param: dict[str, str] | None = None) -> str:
         """JS 파일을 읽어서 Jinja2 템플릿으로 렌더링한 후 JSON-safe 문자열로 반환합니다.
         
         JS 코드가 JSON의 comment 필드에 들어갈 때 제어 문자를 이스케이프 처리합니다.
@@ -100,12 +100,14 @@ class Parser:
         
         Args:
             filename: JS 파일명 (예: "remove-old-elements.js")
+            param: Jinja2 템플릿에 넘길 추가 변수 dict (예: {"button_text": "xxx"} → 템플릿에서 {{ uid }} 사용 가능)
         
         Returns:
             JSON-safe하게 이스케이프된 JS 코드 (개행 문자 등이 \\n 형태로 변환됨)
         
         사용 예:
             {{ parser.js_file('remove-old-elements.js') }}
+            {{ parser.js_file('click_button.jinja2.js', {'button_text': 'xxx'}) }}
         
         Raises:
             FileNotFoundError: JS 파일을 찾을 수 없을 때
@@ -117,12 +119,15 @@ class Parser:
         # JS 파일 읽기
         js_content = js_file_path.read_text(encoding="utf-8")
         
-        # Jinja2 템플릿으로 렌더링 (재귀적으로 parser와 faker 사용 가능)
+        # Jinja2 템플릿으로 렌더링 (재귀적으로 parser와 faker 사용 가능, param으로 추가 변수 전달)
         template = Template(js_content)
-        rendered_js = template.render(
-            parser=self,
-            faker=self.getFaker(),
-        )
+        render_kwargs: dict = {
+            "parser": self,
+            "faker": self.getFaker(),
+        }
+        if param:
+            render_kwargs.update(param)
+        rendered_js = template.render(**render_kwargs)
         
         # JSON-safe하게 이스케이프 처리 (개행 문자 등을 \\n 형태로 변환)
         # json.dumps를 사용하면 문자열이 JSON-safe하게 이스케이프되고, 

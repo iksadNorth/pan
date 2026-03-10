@@ -4,6 +4,7 @@ logs/
 
 # Storage
 storage/
+!storage/js/*
 
 # Python
 __pycache__/
@@ -41,3 +42,5 @@ Thumbs.db
 # Custom
 sides
 .env
+secrets/*
+

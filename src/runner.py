@@ -40,10 +40,12 @@ def _wrap_js_for_async(js_code: str) -> str:
 
     - 비동기: 스크립트가 done(...)을 호출하면 그대로 전달.
     - 동기: 스크립트가 done을 호출하지 않으면 반환값(또는 undefined)으로 done 호출.
-    - execute_async_script는 이 함수를 콜백과 함께 호출하므로, 인자로 realDone을 받아야 함.
+    - IIFE로 감싸서 전달하여, Selenium이 new Function(body)로 실행할 때
+      'Function statements require a function name' 문법 오류가 나지 않도록 함.
     """
     # done 중복 호출 방지, 동기 스크립트는 반환값으로 done 호출
-    return f"""function(realDone) {{
+    # (function(realDone){ ... })(callback) 형태로 전달해 선언문이 아닌 표현식으로 실행
+    return f"""(function(realDone) {{
   var doneCalled = false;
   var done = function(val) {{ if (!doneCalled) {{ doneCalled = true; realDone(val); }} }};
   try {{
@@ -54,7 +56,7 @@ def _wrap_js_for_async(js_code: str) -> str:
   }} catch (e) {{
     if (!doneCalled) realDone({{ error: String(e) }});
   }}
-}}"""
+}})(arguments[arguments.length-1]);"""
 
 
 @dataclass(slots=True)
