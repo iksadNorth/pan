@@ -62,13 +62,12 @@ class SideService:
         except FileNotFoundError:
             raise SideFileNotFoundError(f"Side 파일을 찾을 수 없습니다: {side_id}")
 
-        # jinja2 템플릿 렌더링 (param이 있는 경우)
-        if params:
-            try:
-                parser = Parser(params)
-                side_content = parser.render(side_content)
-            except Exception as e:
-                raise SideTemplateRenderError(f"템플릿 렌더링 실패: {str(e)}") from e
+        # jinja2 템플릿 렌더링 (param 없으면 {}로 렌더해 parser.js_file() 등이 동작하도록 함)
+        try:
+            parser = Parser(params or {})
+            side_content = parser.render(side_content)
+        except Exception as e:
+            raise SideTemplateRenderError(f"템플릿 렌더링 실패: {str(e)}") from e
 
         # Side 프로젝트 로드
         try:

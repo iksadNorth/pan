@@ -52,11 +52,27 @@ def _wrap_js_for_async(js_code: str) -> str:
     var result = (function(done) {{
       {js_code}
     }})(done);
-    if (!doneCalled) realDone(result);
+    if (result && typeof result.then === 'function') {{
+      result.then(function(v) {{ if (!doneCalled) {{ doneCalled = true; realDone(v); }} }}, function(e) {{ if (!doneCalled) {{ doneCalled = true; realDone({{ error: String(e) }}); }} }});
+    }} else if (!doneCalled) realDone(result);
   }} catch (e) {{
     if (!doneCalled) realDone({{ error: String(e) }});
   }}
 }})(arguments[arguments.length-1]);"""
+
+
+def execute_async_js(driver: webdriver.Remote, js_code: str) -> Any:
+    """comment JS / execute_js용. wrap 후 execute_async_script 실행, done(값) 반환값을 그대로 반환.
+
+    Args:
+        driver: WebDriver 인스턴스
+        js_code: 실행할 JavaScript 코드 (done 콜백 사용 가능)
+
+    Returns:
+        스크립트가 done(...)에 넘긴 값
+    """
+    wrapped = _wrap_js_for_async(js_code)
+    return driver.execute_async_script(wrapped)
 
 
 @dataclass(slots=True)
@@ -271,8 +287,7 @@ class CommandExecutor:
         # (동기 스크립트는 반환값으로, 비동기 스크립트는 done(...) 호출로 결과 전달)
         if command.comment and command.comment.strip():
             js_code = command.comment.strip()
-            wrapped = _wrap_js_for_async(js_code)
-            result = self.context.driver.execute_async_script(wrapped)
+            result = execute_async_js(self.context.driver, js_code)
             if self.context.result_collector is not None:
                 self.context.result_collector["async_result"] = result
         else:

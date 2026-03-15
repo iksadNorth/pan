@@ -177,7 +177,7 @@ class WSConnectionManager:
         Returns:
             실행 결과 딕셔너리
         """
-        from src.runner import execute_javascript
+        from src.runner import execute_async_js
 
         # Pydantic 모델로 검증
         try:
@@ -185,14 +185,13 @@ class WSConnectionManager:
         except ValidationError as e:
             return {"type": "error", "message": f"요청 검증 실패: {e.errors()[0]['msg']}"}
 
-        # 세션 획득 및 JS 실행
+        # 세션 획득 및 JS 실행 (storeText comment와 동일 경로: done(값) 반환 수집)
         loop = asyncio.get_event_loop()
         try:
             with self.session_pool.acquire_session(connection.session_id) as driver:
-                # runner.py의 execute_javascript 함수 재사용
                 result = await loop.run_in_executor(
                     None,
-                    lambda: execute_javascript(driver, request.code)
+                    lambda: execute_async_js(driver, request.code)
                 )
                 return {"type": "result", "data": result}
         except ValueError as e:
@@ -243,9 +242,8 @@ class WSConnectionManager:
                     None,
                     lambda: runner.execute_side_on_driver(driver, suite=request.suite, test=request.test)
                 )
-                out = {"type": "result", "data": page_source}
-                if async_result is not None:
-                    out["async_result"] = async_result
+                # async_result: storeText + comment(JS) 실행 시 마지막으로 done(...)에 넘긴 값 (runScript로 실행한 JS는 수집 안 됨)
+                out = {"type": "result", "data": page_source, "async_result": async_result}
                 return out
         except ValueError as e:
             return {"type": "error", "message": str(e)}
